@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexPhy v2.1: Excel Export Upgrades</title>
+    
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
+    <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <style>
+        body { background-color: #f4f6f8; font-family: 'Segoe UI', system-ui, sans-serif; color: #212529; }
+        .sidebar { background: #ffffff; padding: 25px; height: 100vh; border-right: 1px solid #dee2e6; overflow-y: auto; position: fixed; width: 340px; z-index: 1000; box-shadow: 2px 0 10px rgba(0,0,0,0.03); }
+        .main-content { margin-left: 340px; padding: 30px; }
+        
+        .card { 
+            border: none; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.04); 
+            margin-bottom: 25px; background: white; 
+            break-inside: avoid; page-break-inside: avoid;
+        }
+        .card-header { background: white; border-bottom: 1px solid #f0f0f0; font-weight: 700; color: #495057; padding: 15px 20px; font-size: 1.05em; border-radius: 10px 10px 0 0 !important; }
+        
+        h1 { font-weight: 800; color: #6610f2; letter-spacing: -0.5px; margin-bottom: 5px; } 
+        .section-title { 
+            font-size: 1.2rem; font-weight: 800; color: #343a40; margin: 30px 0 15px 0; 
+            border-left: 5px solid #6610f2; padding-left: 10px; text-transform: uppercase; 
+            break-after: avoid; page-break-after: avoid;
+        }
+        
+        .var-selector { max-height: 180px; overflow-y: auto; border: 1px solid #ced4da; padding: 10px; border-radius: 6px; background: #f8f9fa; }
+        .loading-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.95); z-index:9999; display:none; flex-direction:column; justify-content:center; align-items:center; }
+        .spinner { width: 50px; height: 50px; border: 5px solid #e9ecef; border-top: 5px solid #6610f2; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .stable-box { 
+            background: linear-gradient(135deg, #f3f0ff 0%, #ffffff 100%); 
+            border-left: 5px solid #6610f2; padding: 20px; border-radius: 8px; 
+            break-inside: avoid; page-break-inside: avoid;
+        }
+        .stable-val { font-size: 1.4em; font-weight: 800; color: #212529; }
+        .stable-label { font-size: 0.75em; text-transform: uppercase; color: #6c757d; font-weight: 700; letter-spacing: 0.5px; }
+        
+        .badge-mod { background: #d1e7dd; color: #0f5132; padding: 5px 10px; border-radius: 10px; font-size: 0.8em; font-weight: 700; }
+        .badge-high { background: #f8d7da; color: #842029; padding: 5px 10px; border-radius: 10px; font-size: 0.8em; font-weight: 700; }
+        
+        .metric-box { text-align: center; padding: 10px; border-radius: 8px; background: #f8f9fa; border: 1px solid #dee2e6; }
+        .metric-val { font-size: 1.2rem; font-weight: 800; color: #6610f2; }
+        .metric-lbl { font-size: 0.75rem; text-transform: uppercase; color: #6c757d; font-weight: 700; }
+
+        .driver-box { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px; font-size: 0.9em; }
+        .form-check-input:checked { background-color: #6610f2; border-color: #6610f2; }
+        input[type=range]::-webkit-slider-thumb { background: #6610f2; }
+
+        .pdf-page-break { page-break-before: always; break-before: always; height: 1px; display: block; }
+        .table-responsive { overflow: visible !important; }
+        
+        .disabled-btn { pointer-events: none; opacity: 0.5; }
+        
+        /* Screenshot Button CSS */
+        .btn-screenshot { 
+            padding: 2px 10px; font-size: 0.75em; font-weight: bold; border-radius: 6px; 
+            border: 1px solid #ced4da; background: white; color: #495057; 
+            cursor: pointer; float: right; transition: all 0.2s ease;
+        }
+        .btn-screenshot:hover { background: #e0cffc; border-color: #6610f2; color: #6610f2; }
+    </style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loader">
+    <div class="spinner"></div>
+    <div style="margin-top:20px; font-weight:600; color:#555;">NexPhy Processing...<br><small style="font-weight: 400;">Loading Statsmodels & Pyodide</small></div>
+</div>
+
+<div class="sidebar" id="sidebar_panel">
+    <h1>⚛️ NexPhy</h1>
+    <p class="text-muted small">v2.1: Excel Upgrades</p>
+    
+    <div class="mb-4">
+        <label class="form-label fw-bold small text-uppercase text-muted">1. Data Source</label>
+        <div class="d-grid">
+            <label class="btn btn-outline-primary btn-sm" for="file_upload" style="border-color: #6610f2; color: #6610f2;">
+                📂 Upload CPET
+            </label>
+            <input type="file" id="file_upload" accept=".xlsx, .xls, .csv" hidden>
+        </div>
+        <div id="file_status" class="form-text mt-2 text-truncate">No file loaded</div>
+    </div>
+
+    <div class="mb-4">
+        <label class="form-label fw-bold small text-uppercase text-muted">2. Variables</label>
+        <div class="var-selector" id="var_list">
+            <div class="text-center text-muted p-2 small">Waiting for data...</div>
+        </div>
+        <div class="form-text mt-1 text-danger small" id="var_warning">Select 3+ variables.</div>
+    </div>
+
+    <div class="mb-4">
+        <label class="form-label fw-bold small text-uppercase text-muted">3. Window Settings</label>
+        <div class="input-group input-group-sm mb-1">
+            <span class="input-group-text">Window (s)</span>
+            <input type="number" id="window_size" class="form-control" value="60" min="30" step="5">
+        </div>
+        <div id="res_display" class="form-text text-success small fw-bold"></div>
+        
+        <div class="form-check form-switch mt-2">
+            <input class="form-check-input" type="checkbox" id="chk_auto_domain" checked disabled>
+            <label class="form-check-label small" for="chk_auto_domain">Segment by 'Domains'</label>
+        </div>
+    </div>
+    
+    <div class="mb-4">
+        <label class="form-label fw-bold small text-uppercase text-muted">4. Network Settings</label>
+        
+        <div class="d-flex justify-content-between small mt-1">
+            <span>Max Time Lag (samples)</span>
+            <span id="lag_val" class="fw-bold">3</span>
+        </div>
+        <input type="range" class="form-range" id="net_lag" min="1" max="15" step="1" value="3" oninput="document.getElementById('lag_val').innerText = this.value">
+        <small class="text-muted" style="font-size:0.7em;">Finds strongest connection up to limit</small>
+
+        <div class="d-flex justify-content-between small mt-3">
+            <span>Min F-Statistic</span>
+            <span id="fstat_val" class="fw-bold">10</span>
+        </div>
+        <input type="range" class="form-range" id="net_fstat" min="0" max="50" step="1" value="10" oninput="document.getElementById('fstat_val').innerText = this.value">
+
+        <div class="d-flex justify-content-between small mt-3">
+            <span>Min Correlation (r)</span>
+            <span id="thresh_val" class="fw-bold">0.70</span>
+        </div>
+        <input type="range" class="form-range" id="net_thresh" min="0.3" max="0.95" step="0.05" value="0.70" oninput="document.getElementById('thresh_val').innerText = this.value">
+        <small class="text-muted" style="font-size:0.7em;">Note: Edges require True Granger p < 0.05</small>
+    </div>
+
+    <div class="d-grid gap-2">
+        <button id="btn_run" class="btn btn-primary fw-bold" style="background-color: #6610f2; border:none;" disabled>
+            🚀 RUN ANALYSIS
+        </button>
+        <div class="btn-group" role="group">
+            <button id="btn_pdf" class="btn btn-outline-danger fw-bold" onclick="downloadPDF()" disabled>
+                📄 PDF
+            </button>
+            <a id="btn_excel" class="btn btn-outline-success fw-bold disabled-btn">
+                📊 EXCEL
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="main-content" id="report_content">
+
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
+        <div>
+            <h2 class="fw-bold mb-0 text-dark">NexPhy: Integrative Report</h2>
+            <small class="text-muted" id="report_date">Generated via NexPhy Engine</small>
+        </div>
+        <div class="text-end">
+            <div class="badge bg-dark fs-6">v2.1</div>
+        </div>
+    </div>
+
+    <div class="stable-box mb-4" id="card_optimal">
+        <div class="row align-items-center">
+            <div class="col-12 mb-2 text-uppercase fw-bold text-primary small ls-1" style="color: #6610f2 !important;">Optimal Coordination Phase (3-min Stable)
+                <button class="btn-screenshot" onclick="takeScreenshot('card_optimal', 'Optimal_Coordination', this)">📸 Capture</button>
+            </div>
+            <div class="col-md-4 border-end">
+                <div class="stable-label">Time Window</div>
+                <div class="stable-val" id="stable_phase_txt">-</div>
+            </div>
+            <div class="col-md-4 border-end">
+                <div class="stable-label">HR Range</div>
+                <div class="stable-val text-danger" id="stable_hr_txt">-</div>
+            </div>
+            <div class="col-md-4">
+                <div class="stable-label">SmO2 Range</div>
+                <div class="stable-val text-primary" id="stable_smo2_txt">-</div>
+            </div>
+        </div>
+    </div>
+
+    <h3 class="section-title">I. Principal Component Analysis</h3>
+    
+    <div class="card" id="card_sliding">
+        <div class="card-header">
+            🔄 Sliding Coordination (Yellow Area = Optimal Phase)
+            <button class="btn-screenshot" onclick="takeScreenshot('card_sliding', 'Sliding_Coordination', this)">📸 Capture</button>
+        </div>
+        <div class="card-body">
+            <div id="plot_eigen" style="height: 380px;"></div>
+        </div>
+    </div>
+
+    <div class="pdf-page-break"></div>
+
+    <div class="row">
+        <div class="col-lg-7">
+            <div class="card h-100" id="card_biplot">
+                <div class="card-header">
+                    🎯 PCA Bi-Plot (Outlier-Filtered)
+                    <button class="btn-screenshot" onclick="takeScreenshot('card_biplot', 'PCA_BiPlot', this)">📸 Capture</button>
+                </div>
+                <div class="card-body">
+                    <div id="plot_biplot" style="height: 500px;"></div>
+                    <div class="small text-muted mt-2 bg-light p-2 rounded">
+                        <strong>Color Legend:</strong> <span style="color:#198754">● Moderate</span>, <span style="color:#fd7e14">● Heavy</span>, <span style="color:#dc3545">● Severe</span>.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card mb-3" id="card_scree">
+                <div class="card-header">
+                    📉 Scree Plot
+                    <button class="btn-screenshot" onclick="takeScreenshot('card_scree', 'Scree_Plot', this)">📸 Capture</button>
+                </div>
+                <div class="card-body">
+                    <div id="plot_scree" style="height: 250px;"></div>
+                </div>
+            </div>
+            
+            <div class="card mb-3" id="card_components">
+                <div class="card-header">
+                    📋 Significant Components (Eigenvalue ≥ 1.0)
+                    <button class="btn-screenshot" onclick="takeScreenshot('card_components', 'Components_Table', this)">📸 Capture</button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                        <table class="table table-sm table-striped mb-0 small">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>Comp</th>
+                                    <th>Eigenvalue</th>
+                                    <th>% Var</th>
+                                    <th>Variable Loadings</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbl_components">
+                                <tr><td colspan="4" class="text-center p-3">Waiting...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card bg-light">
+                <div class="card-body p-2 small">
+                    <strong>Statistical Assumptions (Cleaned Data):</strong><br>
+                    <div class="d-flex justify-content-between mt-1">
+                        <span>KMO (Sampling):</span>
+                        <span id="kmo_val" class="fw-bold">-</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>Bartlett (Sphericity):</span>
+                        <span id="bartlett_val" class="fw-bold">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="pdf-page-break"></div>
+
+    <h3 class="section-title">II. Domain Specific Analysis</h3>
+    <div class="card" id="card_domains">
+        <div class="card-header">
+            📊 Entropy & Main Drivers by Intensity
+            <button class="btn-screenshot" onclick="takeScreenshot('card_domains', 'Domain_Entropy', this)">📸 Capture</button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Intensity Domain</th>
+                            <th>Entropy (Garcia-Retortillo)</th>
+                            <th>Top 3 Dominant Drivers</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table_segments">
+                        <tr><td colspan="3" class="text-center p-4 text-muted">Run analysis to see results</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <h3 class="section-title">III. Network Physiology (True Granger causality)</h3>
+    <div class="alert alert-light border small">
+        <strong>Note:</strong> Network mapped using Vector Autoregression (statsmodels). Evaluates all lags up to your maximum criteria and selects the most robust connection. Edges reflect p &lt; 0.05. Hover over middle of lines for F-Stat and P-Value.
+    </div>
+
+    <div class="card" id="card_network">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>🕸️ Causal Network Graph</span>
+            <div>
+                <span class="badge bg-light text-dark border me-2">Weighted Topology</span>
+                <button class="btn-screenshot" onclick="takeScreenshot('card_network', 'Causal_Network', this)">📸 Capture</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-6">
+                    <div class="metric-box">
+                        <div class="metric-val" id="net_density">-</div>
+                        <div class="metric-lbl">Density (Wasserman & Faust)</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="metric-box">
+                        <div class="metric-val" id="net_symmetry">-</div>
+                        <div class="metric-lbl">Reciprocity (Loops vs Hierarchy)</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="plot_network" style="height: 550px;"></div>
+            
+            <div class="row mt-3 border-top pt-3">
+                <div class="col-md-6">
+                    <div class="driver-box">
+                        <div class="fw-bold small border-bottom mb-1">🏆 Top 3 Drivers (Out-Degree)</div>
+                        <div id="net_top_drivers" class="small">-</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="small mt-2">
+                        <div class="d-flex align-items-center mb-1"><span style="width:15px; height:3px; background:green; margin-right:5px;"></span> <b class="text-success">Positive</b> Link (Green)</div>
+                        <div class="d-flex align-items-center mb-1"><span style="width:15px; height:3px; background:orange; margin-right:5px;"></span> <b style="color:#fd7e14">Negative</b> Link (Orange)</div>
+                        <div class="d-flex align-items-center mb-1"><span style="width:15px; height:1px; background:#333; margin-right:5px;"></span> Line Thickness = Strength (r)</div>
+                        <div class="d-flex align-items-center"><span style="width:10px; height:10px; border-radius:50%; background:#20c997; margin-right:5px;"></span> Node Size = Influence</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="pdf-page-break"></div>
+
+    <div class="card" id="card_sankey">
+        <div class="card-header">
+            🌊 Information Flow (Sankey Diagram)
+            <button class="btn-screenshot" onclick="takeScreenshot('card_sankey', 'Information_Flow', this)">📸 Capture</button>
+        </div>
+        <div class="card-body">
+            <div id="plot_sankey" style="height: 550px;"></div>
+            
+            <div class="row mt-3 border-top pt-3">
+                <div class="col-12">
+                    <div class="driver-box">
+                        <div class="fw-bold small border-bottom mb-1">🔗 Top 3 Connections</div>
+                        <div id="sankey_top_flows" class="small">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h3 class="section-title">IV. Data Quality & Artifacts</h3>
+    <div class="card" id="card_artifacts">
+        <div class="card-header">
+            🧹 Outliers Removed (STL Decomposition Method)
+            <button class="btn-screenshot" onclick="takeScreenshot('card_artifacts', 'Data_Quality', this)">📸 Capture</button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped mb-0 small">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Variable</th>
+                            <th>Outliers Detected</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbl_outliers">
+                        <tr><td colspan="3" class="text-center p-3">Run analysis to see data quality</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // Screenshot Utility using html2canvas - UPDATED TO COPY TO CLIPBOARD
+    function takeScreenshot(elementId, filename, btnElement) {
+        const el = document.getElementById(elementId);
+        const btns = el.querySelectorAll('.btn-screenshot');
+        
+        // Save original button text and visually indicate progress
+        const originalText = btnElement.innerText;
+        btnElement.innerText = "⏳...";
+        
+        // Temporarily hide ALL screenshot buttons in the section
+        btns.forEach(btn => btn.style.display = 'none');
+        
+        html2canvas(el, { scale: 2, useCORS: true }).then(canvas => {
+            canvas.toBlob(blob => {
+                try {
+                    const item = new ClipboardItem({ 'image/png': blob });
+                    navigator.clipboard.write([item]).then(() => {
+                        // Restore buttons and show success
+                        btns.forEach(btn => btn.style.display = 'block');
+                        btnElement.innerText = "✅ Copied!";
+                        setTimeout(() => { btnElement.innerText = originalText; }, 2000);
+                    }).catch(err => {
+                        btns.forEach(btn => btn.style.display = 'block');
+                        console.error('Clipboard write failed', err);
+                        btnElement.innerText = "❌ Error";
+                        setTimeout(() => { btnElement.innerText = originalText; }, 2000);
+                        alert('Failed to copy. Please ensure you are viewing this via HTTPS.');
+                    });
+                } catch (err) {
+                    btns.forEach(btn => btn.style.display = 'block');
+                    console.error('ClipboardItem API not supported', err);
+                    btnElement.innerText = originalText;
+                    alert('Copying to clipboard is not supported in this browser version.');
+                }
+            }, 'image/png');
+        });
+    }
+
+    async function downloadPDF() {
+        const element = document.getElementById('report_content');
+        const btn = document.getElementById('btn_pdf');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = "⏳ Generating...";
+        btn.disabled = true;
+        
+        // Hide screenshot buttons for PDF
+        const btns = element.querySelectorAll('.btn-screenshot');
+        btns.forEach(b => b.style.display = 'none');
+
+        document.getElementById('report_date').innerText = "Report Date: " + new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString();
+
+        const originalWidth = element.style.width;
+        const originalMargin = element.style.margin;
+        
+        element.style.width = '1000px'; 
+        element.style.margin = '0 auto';
+        
+        window.dispatchEvent(new Event('resize'));
+        await new Promise(r => setTimeout(r, 800));
+
+        const opt = {
+            margin:       [5, 5, 5, 5],
+            filename:     'NexPhy_Report.pdf',
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true, scrollY: 0 },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' },
+            pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+        };
+
+        html2pdf().set(opt).from(element).save().then(() => {
+            element.style.width = originalWidth;
+            element.style.margin = originalMargin;
+            window.dispatchEvent(new Event('resize')); 
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            // Restore screenshot buttons
+            btns.forEach(b => b.style.display = 'block');
+        });
+    }
+</script>
+
+<py-config>
+    packages = ["pandas", "numpy", "scikit-learn", "scipy", "networkx", "openpyxl", "statsmodels"]
+</py-config>
+
+<script type="py">
+    import pandas as pd
+    import numpy as np
+    from sklearn.decomposition import PCA
+    from sklearn.preprocessing import StandardScaler
+    import networkx as nx
+    from scipy.stats import pearsonr, chi2, iqr
+    from statsmodels.tsa.stattools import grangercausalitytests
+    from js import document, window, Uint8Array
+    from pyodide.ffi import create_proxy
+    import io
+    import base64
+    import re
+    import json
+    import warnings
+
+    warnings.simplefilter(action='ignore')
+
+    df_global = None
+    time_col_global = None
+    
+    # Updated default variables
+    FOCUS_VARS = {
+        'BF': ['bf', 'breathing frequency'],
+        'Vt': ['vt', 'tidal volume'],
+        'HR': ['hr', 'heart rate'],
+        'O2pulse': ['o2pulse', 'o2/hr', 'o2p'],
+        '%FAT': ['%fat', 'fat%', 'fat'],
+        '%CHO': ['%cho', 'cho%', 'cho'],
+        'SmO2': ['smo2', 'muscle o2'],
+        'THb': ['thb', 'total hb'],
+        'O2EXT': ['o2ext', 'hbdiff', 'o2 extraction'],
+        'OUE': ['oue', 'oxygen uptake efficiency'],
+        'TE': ['te', 'expiratory time'],
+        'TI': ['ti', 'inspiratory time'],
+        'TM': ['tm']
+    }
+
+    def clean_header(h):
+        s = str(h).replace('"', '').replace("'", "")
+        s = re.sub(r'[^a-zA-Z0-9%/_]', '', s)
+        return s
+
+    def stl_outlier_detection(data, window_size=11):
+        n = len(data)
+        x = np.arange(n)
+        trend = pd.Series(data).rolling(window=window_size, center=True, min_periods=1).mean().values
+        remainder = data - trend
+        q1 = np.percentile(remainder, 25)
+        q3 = np.percentile(remainder, 75)
+        iqr_val = q3 - q1
+        lower_bound = q1 - 3 * iqr_val
+        upper_bound = q3 + 3 * iqr_val
+        new_data = data.copy()
+        outlier_indices = []
+        for i in range(n):
+            if remainder[i] < lower_bound or remainder[i] > upper_bound:
+                new_data[i] = trend[i] 
+                outlier_indices.append(i)
+        return new_data, len(outlier_indices)
+
+    async def load_file(event):
+        global df_global, time_col_global
+        try:
+            document.getElementById("loader").style.display = "flex"
+            f = event.target.files.item(0)
+            document.getElementById("file_status").innerText = f"Loaded: {f.name}"
+            buf = await f.arrayBuffer()
+            data = io.BytesIO(bytes(Uint8Array.new(buf)))
+            
+            if f.name.endswith('.csv'):
+                try: df = pd.read_csv(data, skipinitialspace=True)
+                except: 
+                    data.seek(0)
+                    df = pd.read_csv(data, encoding='latin1', skipinitialspace=True)
+            else:
+                df = pd.read_excel(data)
+            
+            df.columns = [clean_header(c) for c in df.columns]
+            possible_time = [c for c in df.columns if c.lower() in ['time', 't', 'sec', 'seconds']]
+            time_col_global = possible_time[0] if possible_time else df.columns[0]
+            df_global = df
+            
+            t_vals = pd.to_numeric(df[time_col_global], errors='coerce').dropna().values
+            res = 1.0
+            if len(t_vals) > 1: res = np.mean(np.diff(t_vals))
+            document.getElementById("res_display").innerText = f"Resolution: {res:.2f}s"
+
+            container = document.getElementById("var_list")
+            container.innerHTML = ""
+            cols_lower = {c.lower(): c for c in df.columns}
+            detected_vars = []
+            
+            for label, variants in FOCUS_VARS.items():
+                found_col = None
+                if clean_header(label).lower() in cols_lower:
+                    found_col = cols_lower[clean_header(label).lower()]
+                else:
+                    for v in variants:
+                        if clean_header(v).lower() in cols_lower:
+                            found_col = cols_lower[clean_header(v).lower()]
+                            break
+                if found_col:
+                    add_checkbox(container, found_col, label, True)
+                    detected_vars.append(found_col)
+            
+            for col in df.columns:
+                if col == time_col_global or col in detected_vars or col == 'Domains': continue
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    add_checkbox(container, col, col, False)
+
+            dom_switch = document.getElementById("chk_auto_domain")
+            if 'Domains' in df.columns:
+                dom_switch.checked = True
+                dom_switch.disabled = False
+            else:
+                dom_switch.checked = False
+                dom_switch.disabled = True
+
+            document.getElementById("btn_run").disabled = False
+            document.getElementById("loader").style.display = "none"
+
+        except Exception as e:
+            window.alert(f"Load Error: {str(e)}")
+            document.getElementById("loader").style.display = "none"
+
+    def add_checkbox(parent, val, label_text, is_checked):
+        div = document.createElement("div")
+        div.className = "form-check"
+        inp = document.createElement("input")
+        inp.type = "checkbox"
+        inp.className = "form-check-input var-checkbox"
+        inp.value = val
+        inp.id = f"chk_{val}"
+        inp.checked = is_checked
+        lbl = document.createElement("label")
+        lbl.className = "form-check-label small"
+        lbl.htmlFor = f"chk_{val}"
+        lbl.innerHTML = f"<b>{label_text}</b>" if is_checked else label_text
+        div.appendChild(inp)
+        div.appendChild(lbl)
+        parent.appendChild(div)
+
+    def plot_safe(div_id, traces, layout):
+        window.Plotly.newPlot(div_id, window.JSON.parse(json.dumps(traces)), window.JSON.parse(json.dumps(layout)))
+
+    def calculate_entropy(eigenvalues):
+        total_var = np.sum(eigenvalues)
+        if total_var == 0: return 0
+        p = eigenvalues / total_var
+        p = p[p > 0]
+        return -np.sum(p * np.log(p))
+    
+    def calculate_kmo(dataset):
+        corr_matrix = np.corrcoef(dataset.T)
+        try: inv_corr = np.linalg.inv(corr_matrix)
+        except: return 0.5 
+        rows = corr_matrix.shape[0]
+        partial_corr = np.zeros((rows, rows))
+        for i in range(rows):
+            for j in range(rows):
+                if i == j: partial_corr[i, j] = 1
+                else: partial_corr[i, j] = -inv_corr[i, j] / np.sqrt(inv_corr[i, i] * inv_corr[j, j])
+        sum_r2 = np.sum(corr_matrix**2) - np.trace(corr_matrix**2) 
+        sum_p2 = np.sum(partial_corr**2) - np.trace(partial_corr**2) 
+        kmo = sum_r2 / (sum_r2 + sum_p2)
+        return kmo
+
+    def calculate_bartlett(dataset):
+        corr_matrix = np.corrcoef(dataset.T)
+        n, p = dataset.shape
+        det = np.linalg.det(corr_matrix)
+        if det <= 0: return 0, 1.0 
+        statistic = - (n - 1 - (2 * p + 5) / 6) * np.log(det)
+        df = p * (p - 1) / 2
+        p_val = 1 - chi2.cdf(statistic, df)
+        return statistic, p_val
+
+    def find_stable_phase(t, pc1, hr, smo2, duration=180):
+        if len(t) < 5: return None
+        dt = np.mean(np.diff(t))
+        win_pts = int(duration / dt)
+        if win_pts >= len(pc1): win_pts = len(pc1) // 2
+        
+        best_idx = -1
+        best_score = -np.inf
+        
+        for i in range(len(pc1) - win_pts):
+            chunk = pc1[i : i+win_pts]
+            score = np.mean(chunk) - (2.0 * np.std(chunk))
+            if score > best_score:
+                best_score = score
+                best_idx = i
+        
+        if best_idx != -1:
+            end_idx = best_idx + win_pts
+            def get_range(arr):
+                if len(arr) != len(t): return "N/A", 0
+                seg = arr[best_idx:end_idx]
+                return f"{np.min(seg):.0f}-{np.max(seg):.0f}", np.mean(seg)
+            
+            hr_rng, hr_avg = get_range(hr)
+            if len(smo2) == len(t):
+                seg_sm = smo2[best_idx:end_idx]
+                sm_rng = f"{np.max(seg_sm):.1f}-{np.min(seg_sm):.1f}" 
+            else:
+                sm_rng = "N/A"
+
+            return {'start': t[best_idx], 'end': t[end_idx-1], 'hr_range': hr_rng, 'sm_range': sm_rng, 'avg_hr': hr_avg}
+        return None
+
+    def run_analysis(event):
+        document.getElementById("loader").style.display = "flex"
+        try:
+            checkboxes = document.querySelectorAll(".var-checkbox:checked")
+            selected_vars = [cb.value for cb in checkboxes]
+            if len(selected_vars) < 3: raise ValueError("Select 3+ variables")
+
+            data = df_global[[time_col_global] + selected_vars].dropna().copy()
+            
+            outlier_counts = {}
+            cleaned_data = data.copy()
+            for col in selected_vars:
+                vals = data[col].values
+                clean_vals, count = stl_outlier_detection(vals, window_size=11)
+                cleaned_data[col] = clean_vals
+                outlier_counts[col] = count
+
+            # Update UI for outliers
+            tbl_out = document.getElementById("tbl_outliers")
+            tbl_out.innerHTML = ""
+            for var in selected_vars:
+                cnt = outlier_counts[var]
+                status = "<span class='text-success'>Clean</span>" if cnt == 0 else "<span class='text-warning fw-bold'>Filtered</span>"
+                row = document.createElement("tr")
+                row.innerHTML = f"<td>{var}</td><td>{cnt}</td><td>{status}</td>"
+                tbl_out.appendChild(row)
+                
+            # Excel Data Structure for Artifacts
+            artifacts_excel_data = []
+            for var, cnt in outlier_counts.items():
+                artifacts_excel_data.append({
+                    "Variable": var,
+                    "Outliers Detected": cnt,
+                    "Status": "Clean" if cnt == 0 else "Filtered"
+                })
+
+            dom_el = document.getElementById("chk_auto_domain")
+            use_domains = False
+            if 'Domains' in df_global.columns and dom_el and dom_el.checked:
+                data['Domains'] = df_global.loc[data.index, 'Domains']
+                use_domains = True
+            else:
+                data['Domains'] = 'General'
+
+            t = data[time_col_global].values
+            X_clean_raw = cleaned_data[selected_vars].values
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X_clean_raw)
+
+            kmo = calculate_kmo(X_scaled)
+            _, bart_p = calculate_bartlett(X_scaled)
+            document.getElementById("kmo_val").innerText = f"{kmo:.2f} ({'Adequate' if kmo>0.5 else 'Low'})"
+            document.getElementById("bartlett_val").innerText = f"p={bart_p:.3f} ({'Met' if bart_p<0.05 else 'Failed'})"
+
+            pca = PCA()
+            pca.fit(X_scaled)
+            eigenvals = pca.explained_variance_
+            loadings = pca.components_
+            
+            # Excel Data Structures
+            pca_excel_data = []
+            
+            # --- SIGNIFICANT PCA TABLE ---
+            tbl_comp = document.getElementById("tbl_components")
+            tbl_comp.innerHTML = ""
+            total_eigen = np.sum(eigenvals)
+            
+            has_significant = False
+            for i in range(len(eigenvals)):
+                if eigenvals[i] < 1.0:
+                    continue
+                    
+                has_significant = True
+                comps = loadings[i]
+                sorted_idx = np.argsort(np.abs(comps))[::-1]
+                var_strs = []
+                for idx in sorted_idx:
+                    val = comps[idx]
+                    var_strs.append(f"{selected_vars[idx]} ({val:.2f})")
+                
+                pct = (eigenvals[i] / total_eigen) * 100
+                row = document.createElement("tr")
+                row.innerHTML = f"<td>PC{i+1}</td><td>{eigenvals[i]:.2f}</td><td>{pct:.1f}%</td><td style='white-space:normal; font-size:0.85em;'>{', '.join(var_strs)}</td>"
+                tbl_comp.appendChild(row)
+                
+                pca_excel_data.append({
+                    "Component": f"PC{i+1}",
+                    "Eigenvalue": eigenvals[i],
+                    "% Variance": pct,
+                    "Variable Loadings": ", ".join(var_strs)
+                })
+                
+            if not has_significant:
+                 row = document.createElement("tr")
+                 row.innerHTML = f"<td colspan='4' class='text-center'>No components with Eigenvalue ≥ 1.0 found.</td>"
+                 tbl_comp.appendChild(row)
+
+            win_sec = int(document.getElementById("window_size").value)
+            dt = np.mean(np.diff(t)) if len(t)>1 else 1.0
+            step = max(3, int(win_sec/dt))
+            roll_t, roll_pc1, roll_pc2 = [], [], []
+            for i in range(len(t) - step):
+                chunk = X_scaled[i : i+step]
+                p = PCA(n_components=2)
+                p.fit(chunk)
+                roll_pc1.append(float(p.explained_variance_ratio_[0]*100))
+                roll_pc2.append(float(p.explained_variance_ratio_[1]*100))
+                roll_t.append(float(t[i+step//2]))
+            
+            hr_col = [c for c in df_global.columns if 'hr' in c.lower()]
+            sm_col = [c for c in df_global.columns if 'smo2' in c.lower()]
+            hr_vals = data[hr_col[0]].values if hr_col else np.zeros(len(t))
+            sm_vals = data[sm_col[0]].values if sm_col else np.zeros(len(t))
+            hr_aligned, sm_aligned = [], []
+            for i in range(len(t) - step): 
+                hr_aligned.append(hr_vals[i+step//2])
+                sm_aligned.append(sm_vals[i+step//2])
+            
+            stable = find_stable_phase(roll_t, roll_pc1, hr_aligned, sm_aligned, duration=180)
+            rect_shapes = []
+            opt_phase_excel_data = []
+            
+            if stable:
+                document.getElementById("stable_phase_txt").innerText = f"{stable['start']:.0f} - {stable['end']:.0f}s"
+                document.getElementById("stable_hr_txt").innerText = f"{stable['hr_range']} bpm"
+                document.getElementById("stable_smo2_txt").innerText = f"{stable['sm_range']} %"
+                rect_shapes.append({'type': 'rect', 'xref': 'x', 'yref': 'paper', 'x0': stable['start'], 'x1': stable['end'], 'y0': 0, 'y1': 1, 'fillcolor': '#ffec99', 'opacity': 0.3, 'line': {'width': 0}})
+                
+                opt_phase_excel_data.append({
+                    "Time Window (s)": f"{stable['start']:.0f} - {stable['end']:.0f}",
+                    "HR Range (bpm)": stable['hr_range'],
+                    "SmO2 Range (%)": stable['sm_range']
+                })
+            else:
+                document.getElementById("stable_phase_txt").innerText = "No stable 3min"
+                opt_phase_excel_data.append({
+                    "Time Window (s)": "No stable 3min found",
+                    "HR Range (bpm)": "-",
+                    "SmO2 Range (%)": "-"
+                })
+
+            plot_safe("plot_eigen", [
+                {"x": roll_t, "y": roll_pc1, "type": "scatter", "mode": "lines", "line": {"color": "#6610f2", "width": 3}, "name": "PC1"},
+                {"x": roll_t, "y": roll_pc2, "type": "scatter", "mode": "lines", "line": {"color": "#adb5bd", "width": 2, "dash": "dot"}, "name": "PC2"}
+            ], {"margin": {"t":10, "l":40, "r":10, "b":40}, "xaxis": {"title": "Time (s)"}, "yaxis": {"title": "% Explained", "range": [0, 105]}, "hovermode": "x", "shapes": rect_shapes})
+
+            seg_results = []
+            data['Domains'] = data['Domains'].astype(str)
+            mask_mod = (data['Domains'] == 'Moderate')
+            mask_high = (data['Domains'].isin(['Heavy', 'Severe'])) 
+            
+            def analyze_seg(mask, name):
+                if np.sum(mask) > 5:
+                    sub_X = X_scaled[mask]
+                    p_sub = PCA(n_components=min(len(selected_vars), sub_X.shape[0]))
+                    p_sub.fit(sub_X)
+                    ent = calculate_entropy(p_sub.explained_variance_)
+                    
+                    loadings = p_sub.components_[0]
+                    indices = np.argsort(np.abs(loadings))[::-1]
+                    top3 = []
+                    for i in indices[:3]:
+                        val = loadings[i]
+                        if abs(val) >= 0.4: top3.append(f"{selected_vars[i]} ({val:.2f})")
+                    if not top3:
+                         for i in indices[:3]: top3.append(f"{selected_vars[i]} ({loadings[i]:.2f})")
+                    seg_results.append({'Domain': name, 'Entropy': float(ent), 'Drivers': ", ".join(top3)})
+            
+            if use_domains:
+                analyze_seg(mask_mod, "Moderate (Below VT)")
+                analyze_seg(mask_high, "High Intensity (Above VT)")
+            
+            tbl_seg = document.getElementById("table_segments")
+            tbl_seg.innerHTML = ""
+            for res in seg_results:
+                badge = "badge-mod" if "Moderate" in res['Domain'] else "badge-high"
+                row = document.createElement("tr")
+                row.innerHTML = f"<td><span class='{badge}'>{res['Domain']}</span></td><td>{res['Entropy']:.2f}</td><td class='small text-primary'>{res['Drivers']}</td>"
+                tbl_seg.appendChild(row)
+
+            bi_traces = []
+            scores = pca.transform(X_scaled)
+            cols = {'Moderate': '#198754', 'Heavy': '#fd7e14', 'Severe': '#dc3545', 'General': 'gray'}
+            for dom in data['Domains'].unique():
+                mask = (data['Domains'] == dom)
+                bi_traces.append({"x": scores[mask, 0].tolist(), "y": scores[mask, 1].tolist(), "mode": "markers", "type": "scatter", "name": dom, "marker": {"color": cols.get(dom, '#6610f2'), "size": 6, "opacity": 0.6}})
+            
+            scale = np.max(np.abs(scores)) * 0.8
+            for i, var in enumerate(selected_vars):
+                lx, ly = loadings[0, i]*scale, loadings[1, i]*scale
+                bi_traces.append({"x": [0, lx], "y": [0, ly], "mode": "lines+text", "type": "scatter", "text": ["", var], "textposition": "top right", "line": {"color": "black", "width": 1.5}, "showlegend": False})
+            
+            plot_safe("plot_biplot", bi_traces, {"margin": {"t":10, "l":40, "r":10, "b":40}, "xaxis": {"title": "PC1"}, "yaxis": {"title": "PC2"}})
+            
+            plot_safe("plot_scree", [{"x": [f"PC{i+1}" for i in range(len(eigenvals))], "y": eigenvals.tolist(), "type": "bar", "marker": {"color": "#6610f2"}}], 
+            {"margin": {"t":10, "l":40, "r":10, "b":40}, "shapes": [{"type": "line", "x0": -0.5, "x1": len(eigenvals)-0.5, "y0": 1, "y1": 1, "line": {"color": "red", "dash": "dash"}}]})
+
+
+            # --- DYNAMIC MAX-LAG GRANGER CAUSALITY TEST ---
+            thresh = float(document.getElementById("net_thresh").value)
+            max_lag_limit = int(document.getElementById("net_lag").value)
+            f_thresh = float(document.getElementById("net_fstat").value)
+            
+            G = nx.DiGraph()
+            links = []
+            edge_excel_data = []
+
+            for i in range(len(selected_vars)):
+                G.add_node(selected_vars[i]) 
+                for j in range(len(selected_vars)):
+                    if i == j: continue
+                    
+                    source_v = selected_vars[i]
+                    target_v = selected_vars[j]
+                    
+                    data_var = np.column_stack((X_scaled[:, j], X_scaled[:, i]))
+                    
+                    best_f = 0.0
+                    best_p = 1.0
+                    best_lag = max_lag_limit
+                    
+                    try:
+                        # Vector Autoregression: evaluates all lags up to max_lag_limit
+                        gc_res = grangercausalitytests(data_var, maxlag=max_lag_limit, verbose=False)
+                        
+                        # Find the lag with the strongest significant signal
+                        for l in range(1, max_lag_limit + 1):
+                            f = gc_res[l][0]['ssr_ftest'][0]
+                            p = gc_res[l][0]['ssr_ftest'][1]
+                            
+                            if p < 0.05 and f > best_f:
+                                best_f = f
+                                best_p = p
+                                best_lag = l
+                                
+                    except:
+                        pass
+                        
+                    # Calculate Pearson using the specific optimal lag
+                    r_direct, _ = pearsonr(X_scaled[:-best_lag, i], X_scaled[best_lag:, j])
+
+                    # Filter: Significant p-value, meets correlation strength, AND meets Min F-Stat
+                    if best_p < 0.05 and abs(r_direct) > thresh and best_f >= f_thresh:
+                        G.add_edge(source_v, target_v, weight=abs(r_direct))
+                        col = "green" if r_direct > 0 else "orange"
+                        links.append({
+                            'source': source_v, 'target': target_v, 
+                            'val': abs(r_direct), 'color': col, 'type': 'solid',
+                            'f_stat': best_f, 'p_val': best_p, 'opt_lag': best_lag
+                        })
+                        
+                        edge_excel_data.append({
+                            "Source": source_v,
+                            "Target": target_v,
+                            "Optimal Lag (Samples)": best_lag,
+                            "Pearson (r)": r_direct,
+                            "Direction": "Positive" if r_direct > 0 else "Negative",
+                            "F-Statistic": best_f,
+                            "P-Value": best_p,
+                            "Significance": "p < 0.05"
+                        })
+
+            net_density = nx.density(G)
+            try: net_reciprocity = nx.overall_reciprocity(G)
+            except: net_reciprocity = 0.0
+            
+            document.getElementById("net_density").innerText = f"{net_density*100:.1f}%"
+            document.getElementById("net_symmetry").innerText = f"{net_reciprocity*100:.1f}%"
+
+            active_nodes = [n for n in G.nodes() if G.degree(n) > 0]
+            if not active_nodes:
+                 doc_driver_txt = "No connections > threshold"
+                 pos = {}
+            else:
+                 G_sub = G.subgraph(active_nodes)
+                 out_degrees = dict(G_sub.out_degree(weight='weight'))
+                 sorted_drivers = sorted(out_degrees.items(), key=lambda x: x[1], reverse=True)[:3]
+                 doc_driver_txt = ", ".join([f"{k} ({v:.2f})" for k,v in sorted_drivers])
+                 pos = nx.spring_layout(G_sub, k=0.4, seed=42)
+
+            document.getElementById("net_top_drivers").innerText = doc_driver_txt
+            
+            # Extract Node Flow Metrics for Excel
+            node_excel_data = []
+            for n in G.nodes():
+                if G.degree(n) > 0:
+                    node_excel_data.append({
+                        "Variable": n,
+                        "In-Coming Flow (Count)": G.in_degree(n, weight=None),
+                        "Out-Coming Flow (Count)": G.out_degree(n, weight=None),
+                        "In-Degree (Weighted)": G.in_degree(n, weight='weight'),
+                        "Out-Degree (Weighted)": G.out_degree(n, weight='weight')
+                    })
+            
+            annotations = []
+            node_x, node_y, node_txt, node_sz = [], [], [], []
+            
+            # Hover text middle points
+            edge_hover_x, edge_hover_y, edge_hover_txt = [], [], []
+
+            if active_nodes:
+                for l in links:
+                    if l['source'] in active_nodes and l['target'] in active_nodes:
+                        x0, y0 = pos[l['source']]
+                        x1, y1 = pos[l['target']]
+                        w_width = max(1.0, l['val'] * 5) 
+                        w_opac = max(0.2, l['val'])
+                        
+                        annotations.append({
+                            "x": x1, "y": y1, "ax": x0, "ay": y0, 
+                            "xref": "x", "yref": "y", "axref": "x", "ayref": "y", 
+                            "showarrow": True, "arrowhead": 2, "arrowsize": 1, 
+                            "arrowwidth": w_width,
+                            "arrowcolor": l['color'], "opacity": w_opac
+                        })
+                        
+                        # Invisible middle points for Statsmodels F-Stat & P-value hover
+                        edge_hover_x.append((x0+x1)/2)
+                        edge_hover_y.append((y0+y1)/2)
+                        edge_hover_txt.append(f"{l['source']}→{l['target']}<br>Lag: {l['opt_lag']}<br>r: {l['val']:.2f}<br>F-stat: {l['f_stat']:.1f}<br>p-value: {l['p_val']:.3f}")
+
+                for n in active_nodes:
+                    x, y = pos[n]
+                    node_x.append(x); node_y.append(y)
+                    deg = G.out_degree(n, weight='weight')
+                    node_sz.append(20 + (deg * 8))
+                    node_txt.append(f"{n}<br>Out-Degree: {deg:.2f}")
+
+            traces_net = [
+                # Edge Hover Tracer
+                {"x": edge_hover_x, "y": edge_hover_y, "text": edge_hover_txt, "mode": "markers", "hoverinfo": "text", "marker": {"size": 8, "color": "transparent"}, "type": "scatter", "showlegend": False},
+                # Node Tracer
+                {"x": node_x, "y": node_y, "text": node_txt, "mode": "markers+text", "textposition": "top center", "marker": {"size": node_sz, "color": "#20c997", "line": {"width":2, "color":"#333"}}, "type": "scatter"}
+            ]
+
+            plot_safe("plot_network", traces_net,
+            {"showlegend": False, "hovermode": "closest", "xaxis": {"visible": False}, "yaxis": {"visible": False}, "annotations": annotations, "margin": {"t":20, "b":20, "l":20, "r":20}})
+
+            active_link_vars = set()
+            for l in links:
+                if l['source'] in active_nodes and l['target'] in active_nodes:
+                    active_link_vars.add(l['source'])
+                    active_link_vars.add(l['target'])
+            
+            sorted_active = sorted(list(active_link_vars))
+            var_map = {v: i for i, v in enumerate(sorted_active)}
+            
+            s_s, s_t, s_v, s_c = [], [], [], []
+            sorted_links = sorted(links, key=lambda x: x['val'], reverse=True)
+            top_flows_txt = ""
+            count = 0
+            for l in sorted_links:
+                if l['source'] in active_link_vars and l['target'] in active_link_vars:
+                     if count < 3:
+                        top_flows_txt += f"{l['source']}→{l['target']}, "
+                        count += 1
+            document.getElementById("sankey_top_flows").innerText = top_flows_txt.strip(", ") if top_flows_txt else "None"
+
+            for l in links:
+                if l['type'] == 'solid' and l['source'] in active_link_vars and l['target'] in active_link_vars:
+                    s_s.append(var_map[l['source']])
+                    s_t.append(var_map[l['target']])
+                    s_v.append(l['val'])
+                    s_c.append("rgba(32, 201, 151, 0.4)" if l['color']=='green' else "rgba(253, 126, 20, 0.4)")
+            
+            plot_safe("plot_sankey", [{
+                "type": "sankey", "orientation": "h",
+                "node": {"pad": 15, "thickness": 20, "line": {"color": "black", "width": 0.5}, "label": sorted_active, "color": "#20c997"},
+                "link": {"source": s_s, "target": s_t, "value": s_v, "color": s_c}
+            }], {"margin": {"t":20, "b":20, "l":20, "r":20}})
+            
+            
+            # --- GENERATE EXCEL EXPORT ---
+            global_metrics = [
+                {"Metric": "Network Density", "Value (%)": net_density * 100},
+                {"Metric": "Symmetry (Reciprocity)", "Value (%)": net_reciprocity * 100}
+            ]
+
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                pd.DataFrame(opt_phase_excel_data).to_excel(writer, sheet_name="Optimal Phase", index=False)
+                pd.DataFrame(pca_excel_data).to_excel(writer, sheet_name="PCA Results", index=False)
+                pd.DataFrame(edge_excel_data).to_excel(writer, sheet_name="Network Links", index=False)
+                pd.DataFrame(node_excel_data).to_excel(writer, sheet_name="Network Nodes", index=False)
+                pd.DataFrame(seg_results).to_excel(writer, sheet_name="Domain Entropy", index=False)
+                pd.DataFrame(global_metrics).to_excel(writer, sheet_name="Global Metrics", index=False)
+                pd.DataFrame(artifacts_excel_data).to_excel(writer, sheet_name="Data Quality", index=False)
+            
+            b64 = base64.b64encode(output.getvalue()).decode()
+            
+            btn_ex = document.getElementById("btn_excel")
+            btn_ex.href = f"data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
+            btn_ex.download = "NexPhy_Export.xlsx"
+            btn_ex.classList.remove("disabled-btn")
+            
+            document.getElementById("btn_pdf").disabled = False
+            document.getElementById("loader").style.display = "none"
+
+        except Exception as e:
+            window.alert(f"Analysis Error: {str(e)}")
+            document.getElementById("loader").style.display = "none"
+
+    document.getElementById("file_upload").addEventListener("change", create_proxy(load_file))
+    document.getElementById("btn_run").addEventListener("click", create_proxy(run_analysis))
+
+</script>
+</body>
+</html>
